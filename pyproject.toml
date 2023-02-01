@@ -9,9 +9,7 @@ description = "مكتبة سريعة لتحويل النصوص الطويلة إ
 readme = "README.md"
 requires-python = ">=3.8"
 authors = [{ name = "Youssef Hussein" }]
-dependencies = [
-    "google-generativeai>=0.7.0"
-]
+dependencies = []
 
 [tool.setuptools]
 packages = ["nas_chunk"]

@@ -1,1 +1,1 @@
-google-generativeai>=0.7.0
+# No extra runtime dependencies are required; the client uses Python's standard library.

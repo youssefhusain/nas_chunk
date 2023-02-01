@@ -20,7 +20,7 @@ def text_to_rag_json(
     api_key: str,
     output_path: Optional[str] = None,
     *,
-    model: str = "gemini-2.0-flash",
+    model: str = "gemini-2.5-flash",
     max_chars: int = 4000,
     overlap_chars: int = 300,
     max_workers: int = 8,
@@ -36,7 +36,7 @@ def text_to_rag_json(
     text : النص الكامل اللي عايز تحوله.
     api_key : مفتاح Gemini API.
     output_path : لو حددته، هيتكتب ملف JSON على المسار ده. لو None هيرجع الديكشنري بس.
-    model : اسم موديل Gemini (افتراضي gemini-2.0-flash عشان السرعة).
+    model : اسم موديل Gemini (افتراضي gemini-2.5-flash عشان السرعة).
     max_chars : أقصى حجم لكل chunk بالحروف.
     overlap_chars : قد إيه تداخل بين كل chunk والتاني.
     max_workers : عدد الـ threads اللي هتشتغل بالتوازي (بيزود السرعة جداً).

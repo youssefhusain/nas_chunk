@@ -8,15 +8,10 @@ from __future__ import annotations
 import json
 import re
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from typing import Any, Dict, Optional
-
-try:
-    import google.generativeai as genai
-except ImportError as exc:  # pragma: no cover
-    raise ImportError(
-        "لازم تثبت مكتبة google-generativeai الأول:\n"
-        "    pip install google-generativeai"
-    ) from exc
 
 
 SYSTEM_PROMPT = """You are a text-processing engine for a RAG (Retrieval Augmented Generation) pipeline.
@@ -45,7 +40,7 @@ class GeminiJSONConverter:
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-2.5-flash",
         max_retries: int = 3,
         retry_delay: float = 2.0,
         temperature: float = 0.2,
@@ -53,18 +48,79 @@ class GeminiJSONConverter:
         if not api_key:
             raise ValueError("لازم تدي api_key بتاع Gemini.")
 
-        genai.configure(api_key=api_key)
-        self.model_name = model
+        self.api_key = api_key
+        self.model_name = self._resolve_model_name(model)
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self._model = genai.GenerativeModel(
-            model_name=model,
-            system_instruction=SYSTEM_PROMPT,
-            generation_config={
-                "temperature": temperature,
-                "response_mime_type": "application/json",
-            },
+        self.temperature = temperature
+
+    @staticmethod
+    def _resolve_model_name(model: str) -> str:
+        """يرجع اسم موديل مدعوم بدل الأسماء القديمة التي اختفت."""
+        normalized = (model or "").strip()
+        if not normalized:
+            return "gemini-2.5-flash"
+
+        mapping = {
+            "gemini-2.0-flash": "gemini-2.5-flash",
+            "gemini-2.0-flash-latest": "gemini-2.5-flash",
+            "gemini-2.0-flash-thinking-exp": "gemini-2.5-flash",
+        }
+        return mapping.get(normalized, normalized)
+
+    def _generate_content(self, chunk_text: str) -> str:
+        endpoint = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{urllib.parse.quote(self.model_name)}:generateContent"
         )
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": chunk_text}]}],
+            "systemInstruction": {"role": "system", "parts": [{"text": SYSTEM_PROMPT}]},
+            "generationConfig": {
+                "temperature": self.temperature,
+                "responseMimeType": "application/json",
+            },
+        }
+        data = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            endpoint + f"?key={urllib.parse.quote(self.api_key)}",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                body = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(f"Gemini API error {exc.code}: {detail}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Gemini connection error: {exc.reason}") from exc
+
+        try:
+            result = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Gemini returned invalid JSON") from exc
+
+        candidates = result.get("candidates") or []
+        if not candidates:
+            raise RuntimeError(f"Gemini returned no candidates: {body}")
+
+        parts = candidates[0].get("content", {}).get("parts", [])
+        if not parts:
+            raise RuntimeError(f"Gemini returned empty content: {body}")
+
+        text_parts = []
+        for part in parts:
+            if isinstance(part, dict):
+                text_parts.append(part.get("text", ""))
+
+        assembled = "".join(text_parts)
+        if not assembled:
+            raise RuntimeError(f"Gemini returned no textual content: {body}")
+
+        return assembled
 
     @staticmethod
     def _extract_json(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -98,8 +154,7 @@ class GeminiJSONConverter:
 
         for attempt in range(1, self.max_retries + 1):
             try:
-                response = self._model.generate_content(chunk_text)
-                raw_text = response.text or ""
+                raw_text = self._generate_content(chunk_text)
                 parsed = self._extract_json(raw_text)
 
                 if parsed is not None:
