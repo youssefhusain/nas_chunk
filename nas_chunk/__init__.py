@@ -21,20 +21,20 @@ import json
 from typing import Any, Dict, List, Optional
 
 
-def ask(question: str, json_path: str, top_k: int = 3) -> Dict[str, Any]:
-    """بحث بسيط داخل ناتج `text_to_rag_json` عن أفضل الـ chunks للإجابة.
+def ask(
+    question: str,
+    json_path: str,
+    top_k: int = 3,
+    api_key: Optional[str] = None,
+    cache_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """بحث محلي خفيف داخل ناتج `text_to_rag_json` ويُرجع إجابة مع المصادر.
 
-    هذه دالة مساعدة خفيفة للبحث المحلي تُسهل الاستخدام من ناتج الـ RAG.
+    الدالة بسيطة وتعتمد على تطابق كلمات السؤال مع `title`/`summary`/`content`.
+    تقبل `api_key` و `cache_path` لمطابقة توقيع الاستخدام القديم لكنهما
+    غير مستخدمين هنا (يمكن توسيعهم لاحقاً لإضافة بحث دلالي).
 
-    المعاملات
-    ----------
-    question: نص السؤال.
-    json_path: مسار ملف JSON الناتج من `text_to_rag_json`.
-    top_k: عدد النتائج المرجعة.
-
-    ترجع
-    -----
-    dict مع `question` و `matches` مرتبة حسب درجة تشابه بسيطة.
+    ترجع dict يحوي `question`, `matches`, `answer`, `sources`.
     """
     if not question or not json_path:
         raise ValueError("لازم تحدد `question` و `json_path`.")
@@ -61,7 +61,6 @@ def ask(question: str, json_path: str, top_k: int = 3) -> Dict[str, Any]:
         for t in q_tokens:
             if t in text:
                 s += 2
-        # فحص أسئلة مُقترحة داخل الـ chunk لڤترة أقوى
         for qq in chunk.get("questions", []) or []:
             if any(t in str(qq).lower() for t in q_tokens):
                 s += 3
@@ -69,17 +68,30 @@ def ask(question: str, json_path: str, top_k: int = 3) -> Dict[str, Any]:
 
     scored: List[Dict[str, Any]] = []
     for c in chunks:
-        sc = score_chunk(c or {})
-        if sc > 0:
-            scored.append({"score": sc, "chunk": c})
+        if not c:
+            continue
+        sc = score_chunk(c)
+        scored.append({"score": sc, "chunk": c})
 
     scored.sort(key=lambda x: x["score"], reverse=True)
 
-    matches = [
-        {"score": s["score"], **s["chunk"]} for s in scored[:top_k]
-    ]
+    matches = [{"score": s["score"], **s["chunk"]} for s in scored if s["score"] > 0][:top_k]
 
-    return {"question": question, "matches": matches}
+    # إجابة مبسطة: جمع الـ summaries أو محتوى أفضل النتائج
+    if matches:
+        parts = []
+        for m in matches:
+            if m.get("summary"):
+                parts.append(m.get("summary"))
+            else:
+                parts.append(m.get("content", ""))
+        answer = "\n\n".join(parts)
+        sources = [m.get("id") for m in matches if m.get("id")]
+    else:
+        answer = ""
+        sources = []
+
+    return {"question": question, "matches": matches, "answer": answer, "sources": sources}
 
 __all__ = [
     "text_to_rag_json",
