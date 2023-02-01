@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nas-chunk"
+version = "0.1.0"
+description = "مكتبة سريعة لتحويل النصوص الطويلة إلى JSON منظم جاهز لأنظمة RAG باستخدام Gemini"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [{ name = "Youssef Hussein" }]
+dependencies = [
+    "google-generativeai>=0.7.0"
+]
+
+[tool.setuptools]
+packages = ["nas_chunk"]
